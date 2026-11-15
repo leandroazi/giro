@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Giro</title>
+<style>
+  :root { --bg:#081628; --card:#0f2238; --stroke:#1f3652; --txt:#eaf1f8; --muted:#8ea3b8; --azul:#008FFD; --ok:#1e9e62; --warn:#d99a2b; --bad:#d64545; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f1f4f8; --card:#fff; --stroke:#d5dce5; --txt:#0b1b2b; --muted:#5b6b7d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { background:#0b1b2b; color:#fff; padding:14px 16px; display:flex; align-items:center; gap:10px; }
+  header b { font-size:20px; letter-spacing:.5px; font-style:italic; }
+  header span { color:#9fb3c8; font-size:13px; }
+  main { max-width:860px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--stroke); border-radius:14px; padding:16px; margin-bottom:14px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:15px; margin:0 0 10px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .badge { display:inline-block; padding:6px 14px; border-radius:999px; font-weight:700; font-size:15px; color:#fff; }
+  .b-ok{background:var(--ok)} .b-warn{background:var(--warn)} .b-bad{background:var(--bad)} .b-gray{background:#6b7b8d}
+  dl { margin:0; display:grid; grid-template-columns:minmax(120px,38%) 1fr; }
+  dt, dd { margin:0; padding:7px 0; border-top:1px solid var(--stroke); }
+  dt { color:var(--muted); font-size:14px; } dd { font-weight:600; text-align:right; word-break:break-word; }
+  dl > :nth-child(-n+2) { border-top:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+  .fotos { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
+  .fotos a { display:block; aspect-ratio:4/3; border-radius:10px; overflow:hidden; background:#0003; }
+  .fotos img { width:100%; height:100%; object-fit:cover; display:block; }
+  button, .btn { appearance:none; border:0; background:var(--azul); color:#fff; padding:11px 16px; border-radius:12px; font-size:15px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn.sec { background:transparent; border:1px solid var(--stroke); color:var(--txt); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  footer { max-width:860px; margin:0 auto; padding:0 16px 28px; color:var(--muted); font-size:12px; }
+  @media print {
+    :root { --bg:#fff; --card:#fff; --stroke:#ccd; --txt:#000; --muted:#555; }
+    header { background:#fff; color:#000; border-bottom:2px solid #000; } .row, .noprint { display:none !important; }
+    .card { break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<header><b>GIRO</b><span id="hsub"></span></header>
+<main id="app"><div class="card muted">Carregando…</div></main>
+<footer id="foot"></footer>
+<script>
+// Endereço e chave pública (anon) do projeto: não são segredos.
+const API = "https://qcvjxcxqnqolsmgrbias.supabase.co/functions/v1/web-publica";
+const KEY = "sb_publishable_dUZj4gs7kospzW1nrtmAIQ_Y-Y3tflh";
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const dt = (iso) => { try { return new Date(iso).toLocaleString("pt-BR", { timeZone:"America/Bahia", dateStyle:"short", timeStyle:"short" }); } catch { return iso; } };
+const brl = (n) => (typeof n === "number" && n > 0) ? n.toLocaleString("pt-BR", { style:"currency", currency:"BRL" }) : "";
+const rows = (pairs) => "<dl>" + pairs.filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+  .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
+
+async function call(qs) {
+  const r = await fetch(`${API}?${qs}`, { headers: { apikey: KEY, Authorization: "Bearer " + KEY } });
+  let j = null; try { j = await r.json(); } catch {}
+  return { status: r.status, j };
+}
+
+const ESTADOS = {
+  autentico: ["b-ok", "Autêntico", "Documento emitido pelo Giro, com registro correspondente localizado."],
+  substituido: ["b-warn", "Substituído", "Existe uma versão posterior deste documento. Peça a mais recente ao emissor."],
+  cancelado: ["b-bad", "Cancelado", "Esta emissão foi invalidada pelo emissor."],
+  nao_localizado: ["b-gray", "Não localizado", "Nenhum documento com este ID foi encontrado. Confira o código ou desconfie do documento."],
+  indisponivel: ["b-gray", "Indisponível", "O sistema de validação está temporariamente inacessível. Tente de novo em instantes."],
+};
+
+async function verificarLaudo(id) {
+  $("#hsub").textContent = "Verificação de laudo";
+  let res; try { res = await call("laudo=" + encodeURIComponent(id)); } catch { res = { j: { estado: "indisponivel" } }; }
+  const j = res.j || { estado: "indisponivel" };
+  const [cls, titulo, texto] = ESTADOS[j.estado] || ESTADOS.indisponivel;
+  let html = `<div class="card"><span class="badge ${cls}">${titulo}</span><h1 style="margin-top:12px">Laudo cautelar veicular</h1><p class="muted">${texto}</p></div>`;
+  if (j.id) {
+    html += `<div class="card"><h2>Dados da emissão</h2>${rows([
+      ["ID do documento", j.id], ["Placa", j.placa], ["Veículo", j.veiculo], ["Emitido em", dt(j.emitidoEm)],
+      ["Responsável pela emissão", j.emissor], ["Versão", j.versao], ["Substituído por", j.substituidoPor], ["Verificado em", dt(j.verificadoEm)],
+    ])}</div>`;
+  }
+  $("#app").innerHTML = html;
+  $("#foot").textContent = "A validação comprova que o documento foi emitido pelo Giro e confere com o registro de emissão. Ela não atesta a ausência de defeitos ou restrições do veículo. Por privacidade, a placa é exibida parcialmente.";
+}
+
+const MSG_ENVIO = {
+  expirado: "Este link expirou. Peça um novo link ao vendedor.",
+  revogado: "Este link foi cancelado pelo vendedor.",
+  nao_localizado: "Link não encontrado. Confira o endereço recebido.",
+  indisponivel: "Sistema temporariamente indisponível. Tente novamente.",
+};
+
+function fichaTexto(f) {
+  const L = [];
+  const add = (t, pairs) => { L.push(t.toUpperCase()); pairs.forEach(([k, v]) => v && L.push(`${k}: ${v}`)); L.push(""); };
+  add("Veículo", vehiclePairs(f));
+  add("Proprietário atual (vendedor)", ownerPairs(f));
+  add("Comprador", buyerPairs(f));
+  add("Negócio", dealPairs(f));
+  return L.join("\n");
+}
+const vehiclePairs = (f) => { const v = f.veiculo || {}; return [["Placa", v.placa], ["Marca / modelo", [v.marca, v.modelo].filter(Boolean).join(" ")], ["Versão", v.versao], ["Ano", v.ano], ["Cor", v.cor], ["Combustível", v.combustivel], ["Câmbio", v.cambio], ["Quilometragem", v.km ? v.km.toLocaleString("pt-BR") + " km" : ""], ["Chassi", v.chassi], ["Renavam", v.renavam], ["Motor", v.motor], ["Município / UF", v.municipio]]; };
+const ownerPairs = (f) => { const o = f.proprietario || {}; return [["Nome", o.nome], ["CPF", o.cpf], ["Telefone", o.telefone], ["Cidade / UF", o.cidade]]; };
+const buyerPairs = (f) => { const c = f.comprador || {}; return [["Nome", c.nome], ["CPF", c.cpf], ["Telefone", c.telefone]]; };
+const dealPairs = (f) => { const n = f.negocio || {}; return [["Valor", brl(n.valor)], ["Data", n.data ? dt(n.data) : ""], ["Forma de pagamento", n.pagamento], ["Despachante", n.despachante]]; };
+
+async function fichaDespachante(token) {
+  $("#hsub").textContent = "Ficha de transferência";
+  let res; try { res = await call("envio=" + encodeURIComponent(token)); } catch { res = { j: { estado: "indisponivel" } }; }
+  const j = res.j || { estado: "indisponivel" };
+  if (j.estado !== "ok") { $("#app").innerHTML = `<div class="card"><h1>Ficha indisponível</h1><p class="muted">${esc(MSG_ENVIO[j.estado] || MSG_ENVIO.indisponivel)}</p></div>`; return; }
+  const f = j.ficha || {}, v = f.veiculo || {};
+  const titulo = [v.marca, v.modelo].filter(Boolean).join(" ") || "Veículo";
+  const fotos = (j.fotos || []).map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Foto ${i + 1}" loading="lazy"></a>`).join("");
+  $("#app").innerHTML = `
+    <div class="card"><h1>${esc(titulo)} · ${esc(v.placa || "")}</h1>
+      <p class="muted">Enviada por ${esc((f.emissor || {}).nome || "vendedor")}${(f.emissor || {}).telefone ? " · " + esc(f.emissor.telefone) : ""}. Link válido até ${dt(j.expiraEm)}.</p>
+      <div class="row noprint"><button id="print">Imprimir / salvar em PDF</button><button class="btn sec" id="copy">Copiar dados</button></div></div>
+    <div class="grid">
+      <div class="card"><h2>Veículo</h2>${rows(vehiclePairs(f))}</div>
+      <div><div class="card"><h2>Proprietário atual (vendedor)</h2>${rows(ownerPairs(f))}</div>
+      <div class="card"><h2>Comprador</h2>${rows(buyerPairs(f)) || '<p class="muted">Ainda não informado.</p>'}</div></div>
+    </div>
+    <div class="card"><h2>Negócio</h2>${rows(dealPairs(f)) || '<p class="muted">Ainda não informado.</p>'}</div>
+    ${fotos ? `<div class="card"><h2>Fotos</h2><div class="fotos">${fotos}</div></div>` : ""}`;
+  $("#print").onclick = () => window.print();
+  $("#copy").onclick = async (e) => { try { await navigator.clipboard.writeText(fichaTexto(f)); e.target.textContent = "Copiado!"; } catch { e.target.textContent = "Não foi possível copiar"; } };
+  $("#foot").textContent = "Documento de uso restrito ao despachante contratado, para a finalidade de transferência do veículo. Contém dados pessoais (LGPD): não compartilhe nem guarde além do necessário. O link expira e pode ser cancelado pelo vendedor.";
+}
+
+(function main() {
+  const q = new URLSearchParams(location.search);
+  if (q.get("l")) return verificarLaudo(q.get("l").trim().toUpperCase());
+  if (q.get("d")) return fichaDespachante(q.get("d").trim());
+  $("#app").innerHTML = `<div class="card"><h1>Giro</h1><p class="muted">Abra o link recebido do vendedor ou escaneie o QR Code de um laudo para validá-lo.</p></div>`;
+})();
+</script>
+</body>
+</html>
