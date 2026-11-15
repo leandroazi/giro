@@ -5,11 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>GIRO</title>
-<link rel="icon" href="simbolo.png">
+<link rel="icon" href="https://qcvjxcxqnqolsmgrbias.supabase.co/storage/v1/object/public/site/simbolo.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="root"><div class="centro"><p class="muted">Carregando…</p></div></div>
+<script>
+// A logo oficial fica em um bucket público do Supabase (arquivo original, sem recompressão).
+const LOGO = "https://qcvjxcxqnqolsmgrbias.supabase.co/storage/v1/object/public/site/logo.png";
+const trocar = () => document.querySelectorAll('img[src="logo.png"]').forEach((i) => { i.src = LOGO; });
+new MutationObserver(trocar).observe(document.documentElement, { childList: true, subtree: true });
+</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
