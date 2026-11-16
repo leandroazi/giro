@@ -170,7 +170,10 @@ async function acessoDireto(papel) {
   if (!papeis.includes(papel)) {
     const { error } = await sb.from("papeis").insert({ papel });
     if (error) return telaLogin(papel);
-    if (papel === "despachante") await sb.from("escritorios").upsert({ nome: "Meu escritório" });
+    if (papel === "despachante") await sb.from("escritorios").upsert({ nome: "Despachante Bahia" });
+  }
+  if (papel === "despachante" && (!escritorio || escritorio.nome === "Meu escritório")) {
+    await sb.from("escritorios").upsert({ nome: "Despachante Bahia" }); await carregarPerfil();
   }
   await entrarNoPortal(papel);
 }
@@ -222,6 +225,7 @@ const NAV_D = [["painel", "Painel", "home"], ["fila", "Fila de pacotes", "box"],
 let pacotes = [], fotoUrl = {};
 
 async function carregarPacotes() {
+  try { await sb.rpc("receber_do_escritorio"); } catch {}
   const { data, error } = await sb.from("envios_despachante")
     .select("token, ficha, fotos, criado_em, expira_em, status, recebido_em, prazo, concluido_em, historico, pendencias")
     .eq("despachante_id", user.id).order("recebido_em", { ascending: false });
@@ -311,8 +315,13 @@ async function receber(texto) {
 async function paginaPacote(token, P) {
   const p = pacotes.find((x) => x.token === token);
   if (!p) return P({ ativo: "fila", titulo: "Pacote", sub: "", corpo: '<div class="cartao"><h2>Pacote não encontrado</h2><p class="muted">Ele pode ter sido cancelado pelo vendedor.</p><a class="btn" href="#/despachante/fila">Voltar à fila</a></div>' });
-  let fotos = [];
-  if ((p.fotos || []).length) { const { data } = await sb.storage.from("perfil").createSignedUrls(p.fotos, 3600); fotos = (data || []).map((x) => x.signedUrl).filter(Boolean); }
+  let fotos = [], docs = [];
+  if ((p.fotos || []).length) {
+    const { data } = await sb.storage.from("perfil").createSignedUrls(p.fotos, 3600);
+    const url = {}; (data || []).forEach((x) => { if (x.signedUrl) url[x.path] = x.signedUrl; });
+    fotos = p.fotos.filter((c) => !c.includes("/docs/")).map((c) => url[c]).filter(Boolean);
+    docs = ((p.ficha || {}).documentos || []).map((d) => ({ nome: d.nome, tipo: d.tipo, url: url[d.arquivo] })).filter((d) => d.url);
+  }
   const f = p.ficha || {}, pend = p.pendencias || [], idx = STATUS.findIndex((s) => s[0] === p.status), prox = STATUS[idx + 1];
   P({ ativo: "fila", titulo: `${titPacote(p)} · ${f.veiculo?.placa || ""}`, sub: `Recebido em ${dt(p.recebido_em)} · vendedor ${f.emissor?.nome || "—"}`, corpo: `
     <div class="cartao" style="margin-bottom:14px"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><span class="badge-st ${stCor(p.status)}">${stRot(p.status)}</span>${etapas(p.status)}</div>
@@ -325,6 +334,7 @@ async function paginaPacote(token, P) {
       ${pend.map((x) => `<div class="item"><span class="dot ${x.aberta ? (x.urgente ? "r" : "a") : "g"}"></span><span style="flex:1;${x.aberta ? "" : "text-decoration:line-through;opacity:.6"}">${esc(x.texto)}</span><span class="muted small">${dt(x.em)}</span>${x.aberta ? `<button class="ok sm" data-res="${esc(x.id)}">Resolver</button>` : ""}</div>`).join("") || '<p class="muted">Nenhuma pendência.</p>'}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input id="pt" style="flex:1;min-width:200px" maxlength="300" placeholder="Nova pendência (ex.: comprador sem comprovante de endereço)"><label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="pu" style="width:auto"> urgente</label><button id="pa">Adicionar</button></div></div>
     ${fichaCards(f)}
+    ${(f.documentos || []).length ? `<div class="cartao" style="margin-bottom:14px"><h2>Documentos do comprador</h2>${(f.documentos || []).map((d) => { const x = docs.find((y) => y.nome === d.nome); return `<div class="item"><span class="dot ${x ? "g" : "a"}"></span><span style="flex:1">${esc(d.nome)}</span>${x ? `<a class="btn sec sm" href="${esc(x.url)}" target="_blank" rel="noopener">Abrir ${esc((d.tipo || "").toUpperCase())}</a>` : '<span class="muted small">arquivo indisponível</span>'}</div>`; }).join("")}</div>` : ""}
     ${fotos.length ? `<div class="cartao" style="margin-bottom:14px"><h2>Fotos</h2><div class="fotos">${fotos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Foto ${i + 1}" loading="lazy"></a>`).join("")}</div></div>` : ""}
     <div class="cartao"><h2>Histórico</h2>${[...(p.historico || [])].reverse().map((h) => `<div class="item"><span class="dot g"></span><b>${esc(stRot(h.status))}</b><span style="flex:1" class="muted">${esc(h.nota || "")}</span><span class="muted small">${dt(h.em)} · ${esc(h.por || "")}</span></div>`).join("") || '<p class="muted">Sem registros.</p>'}</div>` });
   const rec = async (fn, args) => { const { error } = await sb.rpc(fn, { p_token: token, ...args }); if (error) return msg($("#aviso"), "Não foi possível salvar agora."); rotear(); };
