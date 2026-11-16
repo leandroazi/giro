@@ -158,6 +158,23 @@ function telaLogin(papel, modo = "entrar") {
   };
 }
 
+async function acessoDireto(papel) {
+  root.innerHTML = '<div class="centro"><p class="muted">Entrando…</p></div>';
+  await carregarPerfil();
+  if (!user) {
+    const { error } = await sb.auth.signInAnonymously();
+    if (error) return telaLogin(papel);
+    await carregarPerfil();
+  }
+  if (!user) return telaLogin(papel);
+  if (!papeis.includes(papel)) {
+    const { error } = await sb.from("papeis").insert({ papel });
+    if (error) return telaLogin(papel);
+    if (papel === "despachante") await sb.from("escritorios").upsert({ nome: "Meu escritório" });
+  }
+  await entrarNoPortal(papel);
+}
+
 async function entrarNoPortal(papelPedido) {
   await carregarPerfil();
   if (!user) return (location.hash = "#/");
@@ -340,7 +357,9 @@ async function rotear() {
   if (q.get("d")) return pubFicha(q.get("d").trim());
   const h = (location.hash || "#/").replace(/^#\/?/, "").split("?")[0].split("/");
   await carregarPerfil();
-  if (h[0] === "entrar") return user && papeis.includes(h[1]) ? entrarNoPortal(h[1]) : telaLogin(h[1] === "despachante" ? "despachante" : "vendedor");
+  // TEMPORÁRIO: "Entrar" abre direto com sessão anônima (sem e-mail/senha). Tela de login completa: #/login/<perfil>
+  if (h[0] === "login") return telaLogin(h[1] === "despachante" ? "despachante" : "vendedor");
+  if (h[0] === "entrar") return acessoDireto(h[1] === "despachante" ? "despachante" : "vendedor");
   if (h[0] === "vendedor") return user ? (papeis.includes("vendedor") ? vendedor() : entrarNoPortal("vendedor")) : (location.hash = "#/entrar/vendedor");
   if (h[0] === "despachante") return user ? despachante(h[1] || "painel", h[2]) : (location.hash = "#/entrar/despachante");
   if (user && papeis.length === 1) return (location.hash = papeis[0] === "despachante" ? "#/despachante/painel" : "#/vendedor");
