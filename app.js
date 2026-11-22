@@ -33,8 +33,8 @@ const setTema = (t) => { document.documentElement.dataset.tema = t; try { localS
 setTema(getTema());
 const alternarTema = () => { setTema(getTema() === "escuro" ? "claro" : "escuro"); rotear(); };
 
-// Chave de teste: entrar sem login (precisa também da chave no servidor). Mantida DESLIGADA.
-const ACESSO_ABERTO = false;
+// Chave de teste: entrar sem login (precisa também da chave no servidor). LIGADA durante os testes; desligar antes de divulgar.
+const ACESSO_ABERTO = true;
 
 // ---------- estado ----------
 let user = null, papeis = [], escritorio = null;
