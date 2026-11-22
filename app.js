@@ -33,6 +33,9 @@ const setTema = (t) => { document.documentElement.dataset.tema = t; try { localS
 setTema(getTema());
 const alternarTema = () => { setTema(getTema() === "escuro" ? "claro" : "escuro"); rotear(); };
 
+// Chave de teste: entrar sem login (precisa também da chave no servidor). Mantida DESLIGADA.
+const ACESSO_ABERTO = false;
+
 // ---------- estado ----------
 let user = null, papeis = [], escritorio = null;
 const STATUS = [["recebido", "Recebido", "Documentos recebidos"], ["conferido", "Conferido", "Documentos conferidos"], ["vistoria", "Vistoria", "Vistoria"],
@@ -41,7 +44,9 @@ const stRot = (s) => (STATUS.find((x) => x[0] === s) || [0, 0, "Enviado"])[2];
 const stCor = (s) => ({ concluido: "b-ok", protocolado: "b-ok", vistoria: "b-warn", conferido: "b-ok", recebido: "b-gray" }[s] || "b-gray");
 
 async function carregarPerfil() {
-  const { data: { session } } = await sb.auth.getSession();
+  let { data: { session } } = await sb.auth.getSession();
+  // com o acesso aberto desligado, sessão anônima antiga (de testes) é encerrada: o portal pede login
+  if (!ACESSO_ABERTO && session?.user?.is_anonymous) { await sb.auth.signOut(); session = null; }
   user = session?.user || null; papeis = []; escritorio = null;
   if (!user) return null;
   const { data } = await sb.from("papeis").select("papel");
@@ -367,9 +372,12 @@ async function rotear() {
   if (q.get("d")) return pubFicha(q.get("d").trim());
   const h = (location.hash || "#/").replace(/^#\/?/, "").split("?")[0].split("/");
   await carregarPerfil();
-  // TEMPORÁRIO: "Entrar" abre direto com sessão anônima (sem e-mail/senha). Tela de login completa: #/login/<perfil>
-  if (h[0] === "login") return telaLogin(h[1] === "despachante" ? "despachante" : "vendedor");
-  if (h[0] === "entrar") return acessoDireto(h[1] === "despachante" ? "despachante" : "vendedor");
+  // Acesso aberto (sessão anônima, sem e-mail/senha): DESLIGADO. O servidor também recusa despachante anônimo
+  // (servidor/11_fechar_despachante_anonimo.sql). Para reabrir em testes: ACESSO_ABERTO = true aqui E a chave
+  // permitir_anonimo_despachante = true em app_config.
+  const perfilPedido = h[1] === "despachante" ? "despachante" : "vendedor";
+  if (h[0] === "login") return telaLogin(perfilPedido);
+  if (h[0] === "entrar") return ACESSO_ABERTO ? acessoDireto(perfilPedido) : (user && papeis.includes(perfilPedido) ? entrarNoPortal(perfilPedido) : telaLogin(perfilPedido));
   if (h[0] === "vendedor") return user ? (papeis.includes("vendedor") ? vendedor() : entrarNoPortal("vendedor")) : (location.hash = "#/entrar/vendedor");
   if (h[0] === "despachante") return user ? despachante(h[1] || "painel", h[2]) : (location.hash = "#/entrar/despachante");
   if (user && papeis.length === 1) return (location.hash = papeis[0] === "despachante" ? "#/despachante/painel" : "#/vendedor");
